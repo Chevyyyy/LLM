@@ -1,0 +1,1536 @@
+Uncertainty Based Exploration for Deep
+Reinforcement Learning
+Investigating the Initial Diversity and Bias in Ensemble-Based Uncertainty
+Estimation Methods and its Application in Reinforcement Learning
+Chenfan Weng1
+MSc Robotics and Computation
+First Supervisor: Zhongguo Li
+Second Supervisor: Simon Julier
+Submission Date: 11 September 2023
+Candidate Number: ZGXR8
+1
+Disclaimer: This report is submitted as part requirement for the MSc Robotics and Computation
+at UCL. It is substantially the result of my own work except where explicitly indicated in the text. The
+report may be freely copied and distributed provided the source is explicitly acknowledgedAbstract
+In Reinforcement Learning (RL), the primary objective of agents is to formulate and adopt policies
+that maximise cumulative rewards in a given environment. While learning the optimal policy, a
+dilemma of exploitation and exploration arises: whether RL agents should leverage existing knowl-
+edge to acquire known rewards or seek potentially higher rewards. One commonly used method
+for addressing this dilemma is the ϵ-greedy strategy, where agents select actions randomly with a
+decreasing probability as training progresses. However, in the quest for more efficient and active
+exploration, it is advantageous for agents to leverage uncertainty as a guiding principle. This
+involves considering both the uncertainty associated with expected values for each action and the
+predictions of forward dynamics. This thesis will mainly focus on employing ensemble neural net-
+works to estimate the uncertainty based on the variability among the individual model outputs.
+In this thesis, we have proposed two novel methods: Bootstrapped DQN with Diverse Prior (BSDP)
+and Double Uncertainty DQN (DU). These methods aim to enhance ensemble-based Q-learning
+and address the challenges due to the absence of prior knowledge and uncertainty bias in the sparse
+reward environment. Our experimental results demonstrate that both BSDP and DU outperform
+the baseline ensemble-based Q-learning approach and exhibit superior sample efficiency in a range
+of test environments, including classic control problems, as well as a self-designed environment
+known as BinaryChain for testing the pure exploration capability in sparse reward environments.Contents
+1 Introduction
+1.1 Motivation and Objective . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+1.2
+1.3
+2
+2
+Related Works . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .3
+1.2.1Basic Reinforcement Learning . . . . . . . . . . . . . . . . . . . . . . . . . .3
+1.2.2Uncertainty Estimation in Neural Networks . . . . . . . . . . . . . . . . . .3
+1.2.3Uncertainty-Based Reinforcement Learning . . . . . . . . . . . . . . . . . .5
+Challenges . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .5
+1.3.1Lack of Well-designed Prior on the Ensemble Uncertainty Estimation. . .5
+1.3.2Bias in Uncertainty Estimation in the Sparse Reward Enviroment . . . . .6
+1.4Summay of Contributions . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .7
+1.5Outline of the Thesis . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .7
+2 Preliminary
+8
+2.1Markov Decision Process (MDP) and Bellman Equation . . . . . . . . . . . . . . .8
+2.2Value-Based Algorithms . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .10
+2.3Policy-Based Algorithms . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .10
+2.4Actor-Critic Algorithms . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .11
+2.5
+2.6Distributional RL . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+Exploration Strategies . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .12
+13
+2.6.1Basic Exploration . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .13
+2.6.2Exploration Driven by Uncertainty . . . . . . . . . . . . . . . . . . . . . . .14
+2.6.3Exploration Driven by Intrinsic Motivation . . . . . . . . . . . . . . . . . .15
+Uncertainty Estimation for DRL . . . . . . . . . . . . . . . . . . . . . . . . . . . .16
+2.7.1Monte Carlo (MC) Dropout . . . . . . . . . . . . . . . . . . . . . . . . . . .16
+2.7.2Ensemble Based Uncertainty Estimation . . . . . . . . . . . . . . . . . . . .17
+2.7
+3 Methodology
+18
+3.1Bootstrapped DQN (BS) . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .18
+3.2Bootstrap DQN with Random Prior (BSP) . . . . . . . . . . . . . . . . . . . . . .18
+3.3Bootstrapped DQN with Diverse Prior (BSDP) . . . . . . . . . . . . . . . . . . . .20
+3.4Double Uncertainty DQN (DU) . . . . . . . . . . . . . . . . . . . . . . . . . . . . .23
+4 Experiment
+4.1
+4.2
+25
+Environments . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+25
+4.1.1Classic Control Problem . . . . . . . . . . . . . . . . . . . . . . . . . . . . .25
+4.1.2Chain Environments: BinaryChain . . . . . . . . . . . . . . . . . . . . . . .26
+Metrics . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .27
+14.3
+Experiment Details . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .27
+4.3.1Prior Effect in Ensemble DQN . . . . . . . . . . . . . . . . . . . . . . . . .27
+4.3.2The Effect of Dynamic-uncertainty Based Exploration . . . . . . . . . . . .28
+5 Results and Discussion
+5.1
+5.2
+29
+Prior Effect in Ensemble DQN . . . . . . . . . . . . . . . . . . . . . . . . . . . . .29
+5.1.1Classic Control Problems . . . . . . . . . . . . . . . . . . . . . . . . . . . .29
+5.1.2BinaryChain Problems . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .31
+The Effect of Dynamic-uncertainty Based Exploration . . . . . . . . . . . . . . . .32
+5.2.1Classic Control Problems . . . . . . . . . . . . . . . . . . . . . . . . . . . .32
+5.2.2Balance of Intrinsic Reward and Uncertainty on Q-values . . . . . . . . . .34
+5.2.3BinaryChain Problems . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .35
+6 Conclusion
+37
+6.1Summary of Findings. . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .37
+6.2Limitation and Future Work . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .37
+Bibliography
+38
+2List of Figures
+visualisation of the basic principles of uncertainty estimation methods, where
+[I]
+1.1
+(.)
+denotes the probability distribution of the parameters [15] . . . . . . . . . . . . . .
+4
+2.1flowchart of MDP . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .8
+2.2updating the distributional return [4] . . . . . . . . . . . . . . . . . . . . . . . . . .13
+3.1Visual demonstration of the random prior [34] . . . . . . . . . . . . . . . . . . . . .19
+3.2Random prior outputs v.s. diversity prior outputs . . . . . . . . . . . . . . . . . .22
+3.3flowchart of Double Uncertainty DQN . . . . . . . . . . . . . . . . . . . . . . . . .24
+4.1Rendered figures for classic control environments . . . . . . . . . . . . . . . . . . .26
+4.2BinaryChain example N = 3 . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .27
+5.1Experiment results for investigating Prior effect . . . . . . . . . . . . . . . . . . . .30
+5.2Results for prior effect: BinaryChain (episode number to solve) . . . . . . . . . . .32
+5.3Experiment results for investigating Dynamic-uncertainty’s effect . . . . . . . . . .33
+5.4DU’s balance between intrinsic reward and uncertainty on Q-values . . . . . . . . .35
+5.5Results for Dynamic-uncertainty effect: BinaryChain (episode number to solve)36
+3
+.List of Tables
+4.1Experiment details for investigating prior effect . . . . . . . . . . . . . . . . . . . .
+4.2Experiment details for investigating the effect of dynamic uncertainty-based explo-
+ration . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . . .
+1
+28
+28Chapter 1
+Introduction
+1.1
+Motivation and Objective
+Reinforcement learning (RL) is a sub-field of machine learning that focuses on the decision-making
+process for agents in an environment, with the goal of maximizing cumulative reward. In RL,
+agents interact with the environment to gain experience and then learn an acting policy that leads
+to the highest possible rewards. However, a challenge arises in determining whether an RL agent
+should prioritize exploring new state/action or exploiting its existing knowledge to maximize re-
+wards, creating a dilemma known as the exploration-exploitation trade-off. Excessive exploration
+will lead to the slower convergence of the learning process and also fail to exploit the knowledge
+it has already acquired, resulting in sub-optimal performance. Conversely, excessive exploitation
+will prevent the agent from exploring potentially better actions or states, causing it to be trapped
+in suboptimal performance.
+Deep Reinforcement Learning (DRL) expands the capabilities of traditional Reinforcement Learn-
+ing (RL) by leveraging deep neural networks (NNs) to handle high-dimensional inputs, such as raw
+images. In recent years, DRL has demonstrated remarkable achievements in various domains, such
+as playing GO [42], Atari [2] and Continuous control [25] games. Despite these notable successes
+in specific domains, its extensive implementation in real-world problems encounters challenges,
+primarily stemming from sample inefficiency. To solve even simple problems, DRL typically re-
+quires millions of interactions with the environment. These interactions are time-consuming and
+expensive, making the problem even more pronounced in real-world scenarios compared to simu-
+lations. One bottleneck to improve the sample efficiency is exploration, which involves efficiently
+exploring the environment to acquire informative experiences that expedite the learning process.
+One intuitive way to solve this problem is to track the uncertainties. By doing so, the agent can ex-
+plore highly uncertain state/action spaces while exploiting low-uncertainty ones. From a Bayesian
+perspective, estimating the uncertainty can be viewed as a form of posterior inference about the
+optimal policy. Therefore, the uncertainty-orientated exploration adheres to the only admissible
+decision rule: Bayesian decision rules [10, 50].
+While Bayesian principles offer a key framework for decision-making guidance, calculating the
+precise posterior distribution is often impractical. The state-of-the-art approach for quantifying
+neural network uncertainty is Bayesian Neural Networks (BNNs) [23], which learn distributions
+instead of the point estimates over the weights. Nonetheless, adopting Bayesian NNs requires sub-
+2stantial adjustments to the training process and incurs notable computational costs in comparison
+to standard (non-Bayesian) NNs. A more simple and scalable method to estimate the uncertainty
+is using the ensemble NNs, which has proved successful in practice [24, 33]. It aggregates the esti-
+mates of multiple distinct NNs and the variance of the ensemble’s predictions can be interpreted
+as its uncertainty. The intuition behind it is simple: NNs’ predictions converge to the same results
+(low uncertainty) around data that is frequently observed while the predictions will diverse (high
+uncertainty) around the data that is rarely observed. In this thesis, we will use ensemble-based
+methods to quantify the uncertainty.
+Motivated by the fact above, the objective of this thesis is to investigate the uncertainty-based
+exploration in DRL, specifically using ensemble NNs to quantify uncertainty. Novel methods will
+be proposed to tackle several challenges (Chapter 1.3) to further improve the ensemble-based un-
+certainty estimation and reinforcement learning.
+1.2Related Works
+1.2.1Basic Reinforcement Learning
+Reinforcement learning traces its roots to early work in the field of artificial intelligence and ma-
+chine learning, including Markov decision processes (MDPs) [22] and the Bellman equation [6].
+These seminal works laid the groundwork for subsequent research in RL. Afterwards, two funda-
+mental value-based algorithms, Q-Learning and State-Action-Reward-State-Action (SARSA), were
+introduced, demonstrating their effectiveness in solving problems with discrete state and action
+spaces [46]. The emergence of policy gradient methods shifted the RL algorithms from estimating
+value towards learning parameterised policies directly. This family of algorithms, including REIN-
+FORCE [52] and TRPO [39], has been proven effective in handling high-dimensional action spaces
+and continuous control tasks. Combining the advantages of both value-based methods and policy-
+based methods, a framework called Actor-Critic was introduced [47], which utilised the estimated
+value function to guide the learning of policy.
+Deep Q-Network (DQN) [29] is a breakthrough in RL that leveraged deep neural networks to
+approximate the Q-function, which achieved human-level performances on the challenging domain
+of classic Atari 2600 games [5]. Policy-based algorithms combined with neural networks have
+yielded state-of-the-art RL algorithms like Advantage Actor-Critic (A2C) [28] and Proximal Pol-
+icy Optimization (PPO) [40]. In the thesis, DQN is selected as a foundation method to develop
+for its simple implementation and high interpretability. While DQN may not be state-of-the-art in
+RL, our aim is to study how the guidance of uncertainty impacts this baseline algorithm without
+being influenced by its original performance.
+1.2.2
+Uncertainty Estimation in Neural Networks
+There are four kinds of uncertainty estimation methods: single deterministic methods, Bayesian
+methods, ensemble methods, and test-time augmentation methods [15]. A visualisation of the basic
+principles of uncertainty estimation for four categories is shown in Figure 1.1.
+3[I]
+Figure 1.1: visualisation of the basic principles of uncertainty estimation methods, where
+denotes the probability distribution of the parameters [15]
+(.)
+For deterministic neural networks, the parameters are fixed, and each repetition of a forward pass
+yields the same result. There are two typical ways to use single deterministic methods to estimate
+the uncertainty: 1) predict the parameters of a distribution1 over the common prediction, which
+usually involves loss functions that compute the divergence between the true distribution and the
+predicted distribution [27]; 2) train another independent network that predicts the uncertainty for
+the normal network’s predictions. Single deterministic methods require at most two NNs, which
+makes it more computationally efficient while training. However, its reliance on a single option
+can lead to high sensitivity and bias.
+Bayesian Neural Networks (BNNs) estimate probability distributions of network parameters, merg-
+ing the scalability, expressiveness, and predictive performance in NNs [15]. However, the compu-
+tational cost of BNNs is very high. Ensemble methods combine multiple ensemble members’
+predictions to provide an estimation of uncertainty. A crucial aspect of this method involves
+maximising the diversity in the behaviour of individual members [37]. The approaches for increas-
+ing the diversity include random initialization and data shuffle [24], bagging and boosting [26],
+data augmentation [30] and Ensemble of different network architectures [20]. Ensemble methods
+are straightforward to implement but demand higher memory and computation resources com-
+pared to single deterministic methods, especially when the ensemble size is large. Inspired by
+ensemble methods, test-time augmentation generates multiple test samples from each input to
+calculate a predictive distribution for uncertainty estimation. Although this method is simple and
+computationally efficient, it is important to choose appropriate augmentation techniques to avoid
+compromising prediction accuracy. In specific, a valid augmentation should not generate data out
+of the original data distribution [41].
+In this thesis, we employed ensemble methods to estimate the uncertainty, for its lower com-
+putational cost compared to BNNs, simplicity of implementation, and relatively high accuracy.
+Furthermore, a novel method will be introduced to enhance individual ensemble member diversity
+by adding diverse prior functions to members (Section 5.1). This method not only increased the
+1 For example, if the distribution is normal distribution, then NNs can predict parameters of mean and standard
+deviation.
+4dissimilarity between members than the common random initialization algorithm but also incor-
+porated a prior into the ensemble method to make it more Bayesian in uncertainty estimation.
+1.2.3
+Uncertainty-Based Reinforcement Learning
+The combination of ensemble-based uncertainty estimation and fundamental reinforcement learn-
+ing algorithms has received growing interest from researchers. Unlike supervised learning, rein-
+forcement learning introduces extra uncertainty due to its sequential decision-making nature and
+long-term consequences, where uncertainty can propagate throughout the decision chain. Boot-
+strapped DQN (BSP) enhanced DQN with the bootstrapping2 ensemble methods. It substantially
+improved cumulative performance across most games in the Arcade Learning Environment and
+became a basis for many later ensemble-based RL algorithms [33]. Peer et al. [36] derived the
+Bootstrapped DQN by increasing the number of DQN in double DQN frameworks [48], which
+improved the mitigation of the overestimation issues. A more significant issue in ensemble un-
+certainty estimation is overconfidence, where members tend to agree on poor predictions due to
+limited diversity. Bootstrapped DQN with Random Prior (BSP) reduced the overconfidence by
+adding random priors to ensemble members, which was proved to solve large-scale problems [32].
+Our work Bootstrapped DQN with Diversity Prior (BSDP), builds upon BSP by designing the
+prior functions to maximise dissimilarity in initial behaviours of each member, which has signifi-
+cantly increased the sample efficiency in the early stage of training (Section 5.1).
+Estimating dynamic uncertainty is another direction for uncertainty-based RL. Notably, dynamic
+uncertainty aligns with the conventional supervised learning approach. A common approach to
+utilise the uncertainty in forward dynamic is to use it as an intrinsic reward in addition to the
+external reward from the environment. Considering the single deterministic method, the prediction
+error of the forward dynamic can be regarded as uncertainty [7]. This method is computationally
+cheap and easy to implement but the uncertainty estimation may be biased as the results only
+depend on a single opinion. Houthooft et al. [21] estimate the dynamic uncertainty using BNNs by
+maximising the information gain about agents’ belief in the dynamic, which achieved significantly
+better performance compared to heuristic exploration methods across a variety of continuous con-
+trol tasks. Although it achieved significant performance, BNNs are computationally heavy to train.
+Therefore, We proposed using the ensemble method to estimate dynamics uncertainty and are the
+first to combine value and dynamic uncertainty for robust and unbiased uncertainty estimation in
+RL (Section 3.4).
+1.3Challenges
+1.3.1Lack of Well-designed Prior on the Ensemble Uncertainty Estima-
+tion
+In Bayesian theory, a prior refers to the initial belief or probability distribution assigned to a pa-
+rameter or variable before incorporating new evidence or data. However, most of the uncertainty
+estimation methods in DRL have not explicitly considered the prior. For example, ensemble-based
+approaches such as Ensemble Bootstrapped Q-Learning (EBQL) [36] and Bootstrapped DQN [33]
+(see Section 3.1), just simply train members in the ensemble separately to estimate the posterior
+2 Bootstrapping is a method of resampling where samples are drawn repeatedly from data, and each sample is
+taken with replacement.
+5Q-value without injecting any form of prior, which deviates from the nature of the Bayesian and
+may result in potentially poor result.
+The “prior” mechanism can be considered as a motivation or curiosity that directs the explo-
+ration while the uncertainty estimation does not perform well at the beginning of the training or
+in sparse reward environments [32]. The effect of the “prior” is similar to the concept of intrinsic
+motivation [8] which does not depend on the experience or data collected. In the case of ensemble-
+based approaches, this prior effect can be considered as the diversity source of all the members.
+In other words, the members should be sampled from the prior distribution of weights in NNs
+before receiving any data. If the prior distribution is concentrated, then all the members in the
+ensemble will be similar, which will cause underestimations of the uncertainty (overconfidence)
+and insufficient exploration. In contrast to this, if the prior distribution can cover a wide range of
+diverse models, it will lead to less biased uncertainty estimation results.
+Osband et al. [32] proposed a bootstrapped DQN with random prior (see Section 3.2), which
+showed the state-of-the-art performance on the Atari game Montezuma’s Revenge. However, it
+left an open question of what kind of prior is appropriate for DRL. Following this question, we have
+designed a kind of prior that has maximal diversity in the policy space, called Bootstrapped DQN
+with Diversity Prior (see Section 5.1). This approach can guide the agent to explore effectively at
+the beginning of the learning process using the power of prior diversity. Then in the later learning
+process, the prior effect will gradually disappear, and the estimated uncertainty will dominate the
+exploration and exploitation behaviours.
+1.3.2
+Bias in Uncertainty Estimation in the Sparse Reward Enviroment
+An environment with sparse rewards is where an agent receives very limited feedback from the
+environment. A typical situation is that the agent only gets a positive reward in an extremely rare
+state, which requires a long sequence of specific actions to achieve.
+Back to uncertainty estimation, at the beginning of learning in a sparse reward environment,
+the agent’s policy may be biased and suboptimal. This might cause all ensemble members to
+exhibit similar behaviours, leading to underestimating uncertainty. For example, in a sparse re-
+ward environment, if an agent only receives zero rewards, the Q-values for all ensemble members
+will converge to zero with very low uncertainty. In this case, the overconfident agent will tend to
+exploit, despite the need for exploration should be the priority. To mitigate overconfidence and
+uncover positive rewards, the agent needs supplementary motivation or randomness to stimulate
+exploration behaviour. This clarifies the reason behind the superior performance of training an en-
+semble of Deep Q-Networks (DQNs) with bootstrapped datasets (refer to Section 3.1). Compared
+to training all members with global data, introducing extra randomness through bootstrapping to
+each member establishes a lower bound uncertainty against overconfidence, leading to improved
+outcomes.
+In sparse reward environments, intrinsic motivation sustains the agent’s curiosity, mitigating its
+uncertainty bias before discovering positive rewards. For example, counting-based motivation [3]
+encourages exploration of novel states and dynamic-based motivation drives agents to explore un-
+predictable dynamic transitions [21, 45]. In contrast, uncertainty-driven exploration entails agents
+6exploring based on the external reward from the environment. As far as we know, there are no prior
+works that integrate these two forms of exploration strategies: together. Leveraging the benefits
+of intrinsic motivation and uncertainty-driven exploration3 , we introduce a novel approach called
+Double Uncertainty DQN (DU). This method employs uncertainty from both dynamic (intrinsic)
+and Q-value (external) to enhance exploration in early and advanced stages within a sparse re-
+ward environment. Additionally, a balanced incorporation of these two exploration strategies is
+maintained, contingent on the learning stage.
+1.4
+Summay of Contributions
+• We have designed priors for ensemble methods and proposed Bootstrapped DQN with Diverse
+Prior to maximally diversified individual ensemble members’ initial behaviour (see Section
+5.1). Our proposed method advanced prior design in ensemble-based uncertainty estimation,
+addressing a gap where previous methods either neglected the importance of priors or used
+basic random priors (see Section 1.3.1). It also solved the problem of underestimation of
+uncertainty in ensemble-based DQN and achieved higher sample efficiency than using random
+priors in the early stage of RL.
+• We introduced Double Uncertainty DQN (DU) in Section 3.4, which leverages both intrinsic
+motivation and uncertainty-driven exploration by considering uncertainties in both dynamics
+and the Q-value. This method has tackled the challenge of bias in uncertainty estimation
+with limited data (See Section 1.3.2) and pioneered a novel avenue for integrating various
+uncertainty sources in RL.
+1.5
+Outline of the Thesis
+The Outline of the thesis is structured as follows:
+• Chapter 1 introduces motivation and objectives, related works, challenges, and outlines the
+contributions and structure of the thesis.
+• Chapter 2 provides an overview of key concepts and techniques in Reinforcement Learning
+and several Uncertainty Estimation methods which can be used in DRL.
+• Chapter 3 describes the algorithmic details of the two proposed methods and their imple-
+mentation.
+• Chapter 4 gives a detailed description that specifics the RL environments for training, the
+evaluation metrics and any other training details such as hyperparameters.
+• Chapter 5 shows the results of the experiment and gives a discussion on the performance and
+limitations of each algorithm.
+• Chapter 6 summarises the key findings and contributions, provides a reflection on the results,
+and suggests avenues for future research.
+3 When we mentioned “uncertainty-driven exploration”, it commonly refers to exploration guided by the uncer-
+tainty on Q-values instead of the forward dynamic. Otherwise, We will explicitly indicate that uncertainty is from
+the forward dynamic.
+7Chapter 2
+Preliminary
+2.1
+Markov Decision Process (MDP) and Bellman Equation
+The RL problem can be considered as a Markov Decision Process (MDP), described as a tuple of
+5 components - (S, A, γ, P, R). S donates the state space. A is the action space. γ ∈ [0, 1] is the
+discount factor and a lower value indicates the tendency to get immediate rewards than long-term
+rewards. P defines the initial state distribution p(s0 ) and transition dynamics p(st+1 |st , at ). R
+is the immediate reward function of the state-action pair, which is R(st , at ). In MDP, the agent
+will have an initial state p0 ∼ p(s0 ). At time t, agent in state st ∈ S will take an action at ∈ A
+according to its policy at ∼ π(at |st ), then it will go to the next state st+1 ∼ p(st+1 |st , at ) and get
+an immediate reward rt = R(st , at ). A brief flowchart of MDP is shown in Figure 2.1.
+Figure 2.1: flowchart of MDP
+The objective for MDP is to learn an optimal policy π ∗ to maximise the γ-discounted cumulative
+rewards Gt , considering T as the time horizon.
+Gt =
+T
+X
+γ i rt+i
+(2.1)
+i=0
+(2.1) can be rewritten into a recursive version as below,
+Gt = rt + γGt+1
+8
+(2.2)The state value function or value function (Vπ (s)) is an estimation of expected future return from
+the state s under a certain policy π.
+Vπ (s) = Eπ [Gt |st = s]
+T
+X
+= Eπ [
+(2.3)
+γ i rt+i |st = s]
+(2.4)
+i=0
+where E[.] denotes the expectation as the MDP may act in a stochastic way.
+Another important value function is state-action value Qπ (s, a). It is an estimation of the ex-
+pected future return from the state s, taking action a under a certain policy π,
+Qπ (s, a) = Eπ [Gt |st = s, at = a]
+T
+X
+= Eπ [
+γ i rt+i |st = s, at = a]
+(2.5)
+(2.6)
+i=0
+Then we can formalise the relationship between state value and state-action value as state value
+is the sum of the state-action value for all the possible actions multiplied by the probability of
+choosing each action,
+X
+π(a|s)Qπ (s, a)
+(2.7)
+Vπ (s) =
+a
+where
+P
+a π(a|s) = 1.
+The state value equation can be rewritten into recursive form (Bellman equation for the state
+value function). This equation decomposes the value function as the expected immediate reward
+r and the value of the next state Vπ (s′ ), considering the stochastic nature of policy and dynamics
+by integration,
+Vπ (s) =
+X
+π(a|s)
+X
+p(s′ |s, a)(r + γVπ (s′ ))
+(2.8)
+s′
+a
+State-action value can also be written into recursive form (Bellman equation for the state action
+value function),
+Qπ (s, a) =
+X
+p(s′ |s, a)(r + γ
+s′
+X
+(a′ |s′ )Qπ (s′ , a′ ))
+(2.9)
+a′
+Using the relationships between state value and state-action value in (2.7), we can obtain,
+Qπ (s, a) =
+X
+p(s′ |s, a)(r + γVπ (s′ ))
+(2.10)
+s′
+The optimal state-value function V ∗ (s) and state-action value Q∗ (s, a) are shown below,
+V ∗ (s) = max Vπ (s)(2.11)
+Q∗ (s, a) = max Qπ (s, a)(2.12)
+π
+π
+9Then the Bellman equation of optimality is derived below,
+V ∗ (s) = max
+a
+Q∗ (s, a) =
+X
+p(s′ |s, a)(r + γV ∗ (s′ ))(2.13)
+Q∗ (s′ , a′ ))
+p(s′ |s, a)(r + γ max
+′(2.14)
+s′
+X
+a
+s′
+2.2
+Value-Based Algorithms
+Value-based approaches estimate the optimal state value function V (s) or state-action value Q(s, a)
+recursively. Then the optimal policy can be extracted from the value functions by selecting the
+actions with maximum estimated values. Although this kind of method has a wide scope [46],
+we will focus on the estimation of the Q(s, a) (Q-learning), which will be most representative
+and typical. Other value-based algorithms will be similar to Q-learning except following different
+Bellman recursive equations. In Q-learning, the update of the Q-function follows (2.13),
+h
+i
+Q(s, a) ← Q(s, a) + α r + γ max
+Q(s′ , a′ ) − Q(s, a)
+′
+(2.15)
+a
+where α is the learning rate, maxa′ Q(s′ , a′ ) is the the maximum value over all possible action a′
+in the next state s′ .
+From (2.15), we can find that there is no need to explicitly model the dynamics p(s′ |s, a) (model
+free). The dynamics information is implicitly utilised during update by experience sampling: high
+probability transition pair (s′ , s, a) will be sampled more frequently to update the Q-functions.
+This update can also be expressed in an optimisation perspective, the objective to minimise is TD
+error (Temporal Difference error), denoted by δ.
+δ = r + γ max
+Q(s′ , a′ ) − Q(s, a)
+′
+(2.16)
+a
+2.3
+Policy-Based Algorithms
+Policy-based approaches or policy gradient methods, are model-free algorithms that are considered
+the most direct way to find the optimal policy. Unlike value-based approaches, it directly applies
+gradient ascent with respect to the RL objective corresponding to policy J(πθ ). Considering the
+policy is parameterised by θ, then the objective becomes J(θ), which quantifies the expected
+discounted cumulative rewards for an episode.
+J(θ) = Eπθ [r(τ )]
+where τ = (s0 , a0 , r1 , s1 , a1 , r2 , . . .) is the trajectory of one episode, r(τ ) =
+(2.17)
+PT
+i=1 ri computes the
+total discounted reward for the episode trajectory.
+Then the policy parameters can be updated by gradient ascent,
+θt+1 ← θt + α∇J(θt )
+10
+(2.18)The derivative of J (policy gradient) is shown below,
+T
+X
+∇J(θt ) = Eπθ [r(τ )(
+∇logπθ (at |st ))]
+(2.19)
+t=1
+Policy gradient calculations require sampling many trajectories to estimate an unbiased derivative,
+using the Markov Chain Monte Carlo (MCMC) technique. To lower the variance and required
+sample numbers, we can replace the immediate reward with Gt . Then the policy gradient algorithm:
+REINFORCE is obtained,
+T
+X
+∇J(θt ) = Eπθ [(
+Gt ∇ log πθ (at |st ))]
+(2.20)
+t=1
+Actually, the term Gt in the above equation can also be replaced with other less variant terms like
+advantage function (A(s, a) = Q(s, a) − V (s)).
+2.4
+Actor-Critic Algorithms
+As in the REINFORCE algorithm, the policy is updated through sampling, which will introduce
+high variability in log probability and rewards. Because a tiny change in selected actions or
+initial state may substantially change the whole trajectory, and lead to a noisy policy gradient. To
+mitigate the noisy gradient, we can replace the stochastic Gt in (2.20) with a value-related function
+that is estimated by a separate model, and that is exactly what the Actor-Critic methods do. In
+Actor-critic methods, there are two models parameterised by two sets of parameters ϕ and θ:
+• Critic is a model (e.g. Qϕ (s, a)) that can criticise the actions selected by the actor.
+• Actor is a policy model (πθ (a|s)) that should be updated according to critic’s guidance and
+policy gradient equation (2.20)
+Let’s use Qϕ (s, a) as the critic, then the actor-critic algorithm is as Algorithm 1.
+Algorithm 1 Actor-Critic (Q)
+1: Initialise model parameters ϕ, θ; learning rates αϕ , αθ ; discount factor γ
+2: repeat
+3:
+Reset environment
+Receive initial state s
+Choose action a ∼ πθ (·|s)
+while episode not terminated do
+Take action a, observe reward r and next state s′
+Choose action a′ ∼ πθ (·|s′ )
+Compute TD-error δ = r + γQϕ (s′ , a′ ) − Qϕ (s, a)
+10:
+Update the value function: ϕ ← ϕ + αϕ δ∇ϕ Qϕ (s, a)
+11:
+Update the policy: θ ← θ + αθ Qϕ (s, a)∇θ log πθ (a|s)
+12:
+Set s ← s′ and a ← a′
+13:
+end while
+14: until convergence
+4:
+5:
+6:
+7:
+8:
+9:
+A more frequently used Actor-Critic algorithm is Advantage Actor Critic (A2C), which simply
+replaces the Q in the above algorithm with advantage function A(s, a).
+A(s, a) = Q(s, a) − V (s)
+11
+(2.21)While implementation, there is a trick to avoid building both Q-function and V-function simulta-
+neously. Using the relationship between both value functions from (2.10), we can obtain,
+Q(st , at ) = E[rt+1 + γV (st+1 )](2.22)
+A(st , at ) = E[rt+1 + γV (st+1 )] − V (st )(2.23)
+E[A(st , at )] = E[rt+1 + γV (st+1 ) − V (st )](2.24)
+E[A(st , at )] = E[δV ](2.25)
+where δV = rt+1 + γV (st+1 ) − V (st ) is the TD error for state value function.
+Therefore, we can approximate the advantage function as δV during training to update policy,
+then only the state value function should be maintained in this actor-critic framework.
+2.5
+Distributional RL
+In the common reinforcement learning approaches, the expectation of the return is modelled. For
+example, (2.3) and (2.5) define the state value and state-action value as the expectation of return
+conditioned on state/action. In contrast to the point estimate of the expected return, there is
+a branch of reinforcement learning that explicitly models the value distribution. If we consider
+the random return Z, whose expectation is Q, then we obtain the Bellman equation for Z. This
+equation is also called the distributional Bellman equation.
+D
+Z(s, a) = R(s, a) + γZ(s′ , a′ )
+(2.26)
+D
+where E(Z(s, a)) = Q(s, a) and = denotes the distributional equality.
+Compared to learning the expectation, modelling the return distribution can offer benefits in
+stabilising training by preserving multimodality and mitigating the impact of nonstationary policy
+[4]. Furthermore, the distribution can be regarded as a manifestation of aleatoric uncertainty,
+thereby offering valuable insights for undertaking risk-sensitive tasks. A procedure for computing
+the target distributional return (the righthand side of (2.26)) is demonstrated in Figure 2.2: (a)
+shows the next state’s return distribution under transition P and policy π; (b) multiplies the
+next state Z by a discount factor γ, which will shrink the distribution towards 0; (c) shifts the
+discounted next state Z by immediate reward; (d) projects1 the distribution in (c) into a predefined
+probability model for computing the dissimilarity to the current state Z. After obtaining the target
+Z distribution, we can use metrics such as KL-divergence to quantify the dissimilarity between two
+distributions and minimise it through gradient descent.
+1 For example, if the predefined probability model is a categorical distribution with five supports {0,1,2,3,4}, then
+step (b) and (c) will shrink and shift the supports, we need to project the distribution back to the original supports.
+Otherwise, it is difficult to quantify the dissimilarity between two distributions using different probability models.
+12Figure 2.2: updating the distributional return [4]
+The concept of distributional reinforcement learning has led to the development of various methods,
+each based on different probability models.
+• QR-DQN (Quantile Regression DQN) [11]: Quantile distribution (also known as quan-
+tile regression) uses quantiles to represent the distribution of Z, such as the median (50th
+percentile), quartiles (25th and 75th percentiles), and other percentiles.
+• Categorical DQN [4]: In Categorical DQN, the agent estimates the distribution of the
+Z using a categorical distribution. The distribution is approximated by dividing the range
+of possible returns into a fixed number of discrete bins. The algorithm C51 is a kind of
+Categorical DQN that has 51 bins.
+• MoG-DQN (Mixture of Gaussians DQN) [9]: This method uses a mixture of Gaussians
+to model the return distribution Z.
+For a comprehensive understanding of QR-DQN [11], Categorical DQN [4], and MoG-DQN [9],
+readers are encouraged to consult the provided references.
+2.6
+Exploration Strategies
+There are many perspectives to categorise the exploration strategies. In this chapter, the explo-
+ration strategies are categorised into three parts according to [17].
+2.6.1
+Basic Exploration
+ϵ-greedy: In this method, the agent chooses the action greedily with probability 1 − ϵ while
+exploring a random action with probability ϵ. In implementation, a decay is usually applied to
+the ϵ to make it smaller with the proceeding of training. Despite the simplicity and popularity
+of this method, it can lead to inefficient exploration in large action-state space as all the actions
+are regarded to have the same potential to be explored. Besides, fine-tuning the decay factor and
+upper/lower bound for ϵ is required to make the exploration rate match the training process. In
+this thesis, we will use the decaying ϵ-greedy method for the exploration strategy of DQN, the
+13expression for ϵ is shown in (2.27).
+ϵ = β1 + (β2 − β1 )e(k/λ)
+(2.27)
+where β1 and β2 are the lower and upper bounds of ϵ, k is the total number that the agent has
+done and λ is the decaying factor that determines how fast the epsilon decays.
+Boltzmann Exploration: In this method, the agent chooses the action from the Boltzmann
+distribution (softmax) over each action’s Q-value. However, it cannot be directly applied to con-
+tinuous action space. In formal, the probability of choosing action a is,
+eQ(s,a)/τ
+p(a) = P Q(s,a )/τ
+i
+ie
+(2.28)
+where τ is the temperature parameter, which controls the tendency to choose random actions.
+Upper Confidence Bounds (UCB): In this method, the agent “greedily” chooses the action
+according to the upper bound of the value expectation for each action as (2.29). UCB tends to
+explore those infrequently selected actions, but the overall exploration due to the logarithm in the
+= 0.
+equation that makes the second term tends to zero: limt→∞ Nln(t)
+t (a)
+s
+t
+A = arg max[Q(s, a) + c
+a
+ln(t)
+]
+Nt (a)
+(2.29)
+where c is a positive constant, t is the total number of time steps and Nt (a) is the count of selecting
+action a.
+Entropy Regularisation: This method is commonly applied to RL algorithms with stochas-
+tic policy. It encourages the agent to explore diverse actions by adding a regularisation term
+H(π(a|s)) to the objective function. For example, Soft Actor Critic (SAC) [16] uses this method
+for exploration and its objective function for policy optimisation is,
+T
+X
+J(θ) = Eτ ∼π [
+γ t (rt + αH(π(.|st )))]
+(2.30)
+t=0
+where H(.) denotes the entropy of a distribution.
+Noise Perturbation: It involves adding random noise N (e.g. Gaussian noise) to the deter-
+minant policy at = π(st ), and then obtains an exploration policy π ′ (s),
+π ′ (s) = π(s) + N
+2.6.2
+(2.31)
+Exploration Driven by Uncertainty
+In most model-free RL, the uncertainty is on value functions. There are two types of uncertainty-
+oriented exploration:
+• Epistemic uncertainty: It quantifies the errors or losses due to insufficient knowledge,
+which can be reduced by collecting more data on unknown state-action. Therefore, explor-
+14ing high epistemic uncertainty can be considered as actively collecting important experi-
+ence/data.
+• Aleatoric uncertainty: It quantifies the intrinsic randomness of the environment, which
+can not be reduced. Therefore, the agent should avoid state/action with high aleatoric
+uncertainty because exploring these areas cannot help improve the training.
+There are various methods to estimate these two kinds of uncertainty, which is demonstrated in
+Chapter 2.7. While implementation, there are two major forms to incorporate the uncertainty:
+• Reward shaping: It uses epistemic uncertainty Σ as an additional bonus (or aleatoric
+uncertainty σ as an additional penalty).
+At = arg max(Q(st , at ) + αΣ(st , at ) − βσ(st , at ))
+at
+(2.32)
+where α and β are positive constants.
+• Thompson Sampling: It sample Q-value from its estimated posterior distribution.
+At = arg max(Q(st , at ) + αΣ(st , at ) − βσ(st , at ))
+at
+(2.33)
+Additionally, there is a type of uncertainty-oriented exploration that focuses on the dynamic aspect
+[53]. This approach quantifies the aleatoric uncertainty associated with the stochastic nature of
+the dynamic. During implementation, this form of uncertainty is perceived as a penalty for agents.
+2.6.3
+Exploration Driven by Intrinsic Motivation
+Intrinsic motivation refers to engaging in an activity for the inherent satisfaction it brings, rather
+than pursuing external rewards [38]. When it comes to RL, intrinsic motivation will be considered
+as a kind of reward, called intrinsic reward. This intrinsic reward can be combined with the
+external reward to improve RL exploration and training. There are three main categories of
+intrinsic motivation:
+• Prediction error: It encourages agents to explore states with high prediction errors. For
+example, it can use the error between true next states and predict next states as an intrinsic
+reward [7], which is defined as (2.34). For high dimensional state space, states can also be
+encoded into feature space to compute the distance between prediction and next state as
+intrinsic reward [44].
+Rin (st , st+1 ) = ||st+1 − T (st , at )||2
+(2.34)
+where T is the forward dynamic model of the dynamic.
+• State Novelty: It is also called the count-based method as a counting system will be
+maintained to record how many times the agent has visited a certain state. The less a
+state is visited, the higher novelty (intrinsic reward) it contains. The expression is shown in
+(2.35). Although this method is efficient in tabular RL, it cannot be directly applied to large
+or continuous state space as no state will be visited more than twice. An approach around
+this scalability problem is to use pseudo-count [3], which uses NNs to model the density of
+the visited state N̂ (s) as (2.36).
+Rin (st ) =
+15
+1
+N (st )
+(2.35)where N (s) is the number of times that the state s has been visited.
+N̂ (s) =
+ρ(s)(1 − ρ′ (s))
+ρ′ (s) − ρ(s)
+(2.36)
+where ρ(s) is the model which outputs a probability of observing s and ρ′ (s) is the probability
+of observing s after one more visit on s. (For details and derivation, please refer to [3].)
+• Information Gain: This method tries to maximise the information gain about the agent’s
+belief on environment dynamic [35]. In other words, it takes the action that leads to the
+largest reduction of uncertainty in the dynamic model. A general expression for this intrinsic
+reward is shown in (2.37). The computation of information gain can also be formalised into
+Bayesian learning progress (e.g. [21]).
+Rin = Ut+k (θ) − Ut (θ)
+(2.37)
+where θ is parameter for dynamic model and U(.) quantify the uncertainty of parameters.
+2.7
+Uncertainty Estimation for DRL
+Mainstream deep learning has traditionally been more focused on frequentist approaches rather
+than explicitly incorporating probabilistic methods. Nonetheless, this approach has its shortcom-
+ings. Take the classification problem as an example, the neural networks (NNs) will be overconfi-
+dent in the prediction of unseen data, and using softmax functions as the estimator for uncertainty
+is found to be erroneous [14]. Making decisions without correct UQ can be dangerous in some ap-
+plications with safety issues [49]. Therefore, the uncertainty quantification (UQ) of the predictions
+has become important and has received more attention in recent years. UQ also underpins the
+active learning area by sampling the most informative data to reduce the epistemic uncertainty [1].
+Considering RL, uncertainty estimation can guide the agent’s exploration of the unknown and
+exploit the high-value actions with low uncertainty. In this chapter, two common UQ methods
+that can be applied to deep reinforcement learning will be introduced.
+2.7.1
+Monte Carlo (MC) Dropout
+Monte Carlo (MC) [31] is an effective method for posterior inference but it is slow and computa-
+tionally expensive when dealing with deep architectures. Dropout [43] is a regularisation technique
+commonly used in neural networks to prevent overfitting and improve generalisation performance.
+It involves temporarily ”dropping out” or deactivating randomly selected units (neurons) during
+training. Gal et al. proposed a [14] computational-cheap method: MC dropout, which uses dropout
+in NNs to approximate a Bayesian probabilistic model: Gaussian process (GP) [51]. To estimate
+uncertainty using MC dropout, multiple forward passes should be performed through the NNs with
+dropout enabled during each pass. Instead of producing a single prediction, this results in a distri-
+bution of predictions, and then the uncertainty of the predictions can be interpreted (e.g. variance).
+The implementation of MC dropout is demonstrated below. During the training process, dropout
+applies a random Bernoulli mask to the activations of neural network units. The objective for NNs
+16to optimise (minimise) is,
+EW ∼Ber(p),(x,y)∼D [L(x, y|θ, W ) + R(θ)]
+(2.38)
+where W is the dropout masks that are sampled from Bernoulli distributions with dropout rate p,
+D = {(x, y)} is the data, L is any loss function and R is any regulariser.
+During inferences, the mean prediction µy∗ and uncertainty σy2∗ of the test point x∗ is,
+N
+µy∗ =1 X
+f (y|x∗ , θ, W ∼ Ber(p))
+N i=1(2.39)
+σy2∗ =N
+1 X
+(f (y|x∗ , θ, W ∼ Ber(p)) − µy∗ )2
+N − 1 i=1(2.40)
+where f (y|x, θ, W ) is the forward function of a NN that has weights θ and dropout mask W .
+2.7.2
+Ensemble Based Uncertainty Estimation
+An ensemble of models has been proved to enhance the predictive performance [12]. Besides,
+the ensemble model can also be used to estimate the uncertainty because different models will
+give different predictions. In general, ensemble-based uncertainty estimation should train a set
+of different models, and then use the set of predictions to quantify the uncertainty and expected
+prediction. But how to introduce diversity to each model in the ensemble? Lakshminarayanan
+et al. [24] suggest that initialising the same NN differently and shuffling the training data for
+each model can work. Also, bootstrapping can also be a source of diversity: maintaining private
+subsets of data for each model for training. Besides, perturbing the loss function for each model
+is also effective [32] [18]. The general formalism estimating uncertainty from ensemble model
+{f1 , f2 , . . . , fN },
+N
+1 X
+µy =
+fi (x|ϵi )
+N i=1
+σy2 =
+N
+1 X
+(fi (x|ϵi ) − µy∗ )2
+N − 1 i=1
+(2.41)
+(2.42)
+where µy is the average prediction, σy2 is the variance of the prediction and fi (x|ϵi ) is the model
+in the ensemble model, which is injected with a diversity source ϵ.
+17Chapter 3
+Methodology
+3.1
+Bootstrapped DQN (BS)
+Bootstrapped DQN proposed by Osband et al. [33] employs a Q-network ensemble to facilitate
+exploration. The authors argue that the diversity introduced through the random initialization of
+networks and bootstrapping can result in effective exploration. Each member in the ensemble can
+be considered as the sample from the posterior of the Q-value. This concept bears a significant
+connection to Thompson sampling.
+The pseudocode of this algorithm is shown in Algorithm 2. In each episode, the agent selects
+a model Qk from the ensemble {Qk }K
+k=1 to perform actions and gather data. This data is then
+shared partially among the ensemble members through a data buffer B with the mask mt , then
+each member observes different subsets of the overall data, known as bootstrapping [13]. The mask
+mt determines whether each value function Qk should be trained using the experience generated at
+step t. In its simplest form, mt is a binary vector of length K that samples from a K-dimensional
+Bernoulli distribution. For example, mt = (1, 0, 1, 1, 1) means that only the second Q-network
+cannot train on this step t’s data. To be noticed, if all the mt is filled with 1, then it degrades
+to an ensemble method that all the members share the same global dataset. The update process
+for the Q-network is similar to traditional DQN, with the exception of sampling from the masked
+buffer described above. Additional techniques, such as the use of target networks, can be also
+employed to enhance the stability of the training process for bootstrapped DQN.
+3.2
+Bootstrap DQN with Random Prior (BSP)
+In many uncertainty estimation methods, like the ensemble-based approach, the prior concept is
+often not explicitly considered. Incorporating the Bayesian principle, as discussed in Section 1.1,
+can enhance decision rules that deviate from the Bayesian concept. Osband et al. [32] proposed the
+utilisation of fixed random functions as the prior in this context. In their proposal, the estimated
+Q-value for each member is obtained by combining the outputs of a trainable network fθ (x), and
+a fixed random prior p(x), as shown in (3.1).
+scaling
+Qθ (x) = fθ (x) +
+| {z }
+trainable
+18
+z}|{
+β p(x) .
+|{z}
+prior
+(3.1)Algorithm 2 Bootstrapped DQN
+1: Initialise an ensemble of Q-networks with K members {Qk }K
+k=1 ; Masking distribution M ;
+Replay buffer B.
+2: repeat
+3:
+Reset environment
+4:
+Receive initial state s0
+Pick a Q-value function to follow k ∼ U nif orm{1, . . . , K}
+while episode not terminated do
+Take action at = arg maxa Qk (st , a)
+Receive state st+1 and reward rt from environment, having taking action at
+Sample bootstrap mask mt ∼ M
+Add (st , at , rt , st+1 , mt ) to replay buffer B
+11:
+sample K mini-batch according to masks from B to update each member Q-function
+separately.
+12:
+end while
+13: until convergence
+5:
+6:
+7:
+8:
+9:
+10:
+where β is the scaling factor for prior.
+By adopting this method, more randomness can be introduced into the initialization of each mem-
+ber in the ensemble while preserving the trainable function. In other words, it separates the initial
+weights’ dual roles as both the ’prior’ and the training initialiser. Figure 3.1 provides a visual
+representation of the random prior, where the red lines represent the resulting predictions, the
+blue lines represent the untrainable prior p, the dashed lines depict the trainable function fθ , and
+the black dots represent the training data {(x, y)}. Initially, the impact of the prior is significant,
+but it gradually diminishes as training progresses. After training for many epochs, the trainable
+functions in different members become distinct. However, their combined results (prior+trainable
+function) converge around the data points while diverging in the no-data region. This characteris-
+tic aligns with the objective of quantifying uncertainty. In real applications, randomly initialized
+NNs are typically used as priors.
+Figure 3.1: Visual demonstration of the random prior [34]
+If we combine the random prior with Bootstrapped DQN (see Section 3.1), then the TD-error for
+19each member in the ensemble to optimise becomes (3.2). Each member will train on the subset of
+data determined by the masks but add prior functions to both the current state Q and the next
+state’s Q.
+−
+L(θ; θ , p, D) =
+X
+
+(st ,at ,rt ,s′t ,mt )∈D
+rt + γ max
+(fθ− + p)(s′t ) − (fθ + p)(st , at )
+a′ ∈A
+2
+(3.2)
+where θ is the trainable parameter, θ− is the target function’s parameter, p is the fixed random
+prior function and D = {(st , at , rt , s′t , mt )}.
+3.3
+Bootstrapped DQN with Diverse Prior (BSDP)
+This approach employs the prior in a manner akin to Random Prior (Section 3.2), by adding the
+prior’s output to the output of the trainable function to yield the final value. The diversity of
+individual members within the Bootstrapped DQN can be augmented by two methods: 1) incor-
+porating priors that exhibit maximum dissimilarity in their softmax outputs when operating in
+identical states. 2) increasing the squared second derivatives in all the states to make the initial
+outputs more nonlinear and complex. The intuition behind method 1) is to maximise the model
+disagreement at the beginning of the training to ensure effective exploration among all the mem-
+bers. The intuition behind method 2) is to increase the non-linearity and complexity of initial
+outputs to ensure the effective exploration for a single member. In this diversity initialization,
+only prior functions will be optimised.
+During the implementation, random state data is generated within the state limit ranges, and
+a model from the ensemble is randomly selected. The loss function to minimise is indicated by
+(3.3). The first term computes the negated clipped KL divergence between the softmax output dis-
+tribution of the chosen model and the median softmax output distribution of the entire ensemble,
+which is defined in (3.4). The clipping upperbound ϵ prevents the priors’ output from becoming
+extremely high, which could slow down and destabilise RL training. The second term computes
+the negated squared second derivatives, which is defined as (3.5). While implementation, we ap-
+proximate the second derivative by finite-difference methods1 (FDM). The third term computes
+the squared output of Q for all members, which is defined in (3.6). This term will penalise the
+large absolute values of Q outputs, which may potentially make the training slow and unstable.
+Compared to the clipping in the first term, the third term can more directly constrain the output.
+The pseudocode of diverse prior initialization is demonstrated in Algorithm 3.
+J(pj ) = KL loss(ϵ) + α1 ∗ nonlinearity loss + α2 ∗ bounding loss
+(3.3)
+where ϵ, α1 and α2 are the constants.
+KL loss(ϵ) = −Es clip(DKL (σ(Qj (s))||σ(Q(s))), 0, ϵ)
+(3.4)
+where Qj (s) is the jth member’s Q output in state s for all actions, Q(s) is the median Q output
+of the ensemble in state s for all actions, DKL (.||.) denotes computing the KL divergence between
+two distributions (see (3.7)), σ(.) denotes computing the softmax of the categorical value for each
+1 For example, the second derivative of f (x) can be approximated by f (x+2h)−2f (x+h)+f (x)
+h2
+20action (see (3.3)) and ϵ is the clipping upperbound.
+nonlinearity loss = Es |Q′′j (s)|2
+(3.5)
+where |.| denotes compute the modulus of the vector and Q′′j (s) is the second derivative of Q-value
+on state s for all actions.
+bounding loss = Es |Q(s)2 |
+DKL (P ∥ Q) =
+X
+
+P (i) log
+i
+exi
+σ(xi ) = PN
+j=1 e
+P (i)
+Q(i)
+(3.6)
+
+xj
+(3.7)
+(3.8)
+Algorithm 3 Diverse Prior Initialisation
+1: Initialise an ensemble of Priors with K members {pk }K
+k=1 ; an ensemble of trainable functions
+with K members {fk }K
+k=1
+2: for i = 0, 1, 2, . . . , M do
+3:
+randomly sample a state from the state space: si ∼ statespace
+4:
+randomly select one model index j from 1, 2, . . . , K
+5:
+Compute Q-value for sampled state using selected model: Qj (si ) = fj (si ) + pj (si )
+6:
+Compute the median Q-value of the ensemble: Q(si ) = median(f (si ) + p(si ))
+7:
+Use Gradient descent to update pj by minimise loss function: J(pj )
+8: end for
+To illustrate the impact of diverse initialization and the influence of each term in the loss func-
+tion (3.3), we’ve set up a simple environment. This environment features a one-dimensional state
+space ranging from -5 to 5 and a binary action space. There are 10 Q-functions in our ensemble,
+each comprising two neural networks: one trainable and one prior. Firstly, the ensemble with
+random prior is constructed as follows, the total 20 NNs are initialized randomly using He initial-
+ization [19] which samples the weights from the centralised Gaussian distribution with standard
+p
+deviation 2/n, where n is the input feature number.
+The Q-values for action 0 and action 1 across the state space are illustrated in Figure 3.2a and
+Figure 3.2b. After that, the diverse prior initialization with only KL loss (ϵ = 0.1, α1 = 0, α2 = 0)
+was applied to this ensemble, and then the Q-value outputs become Figure 3.2b and Figure 3.2d,
+where the outputs in the ensemble exclude each other and reach large absolute values. However,
+the output curve for each member is still quite simple and linear (no big fluctuation). Then the
+bounding loss is added (ϵ = 0.1, α1 = 0, α2 = 0.1), and the result is demonstrated in Figure 3.2e
+and Figure 3.2f separately, which looks like the curves in Figure 3.2c and Figure 3.2d are squeezed
+towards zero. After that, the nonlinearity loss is added (ϵ = 0.1, α1 = 1, α2 = 0.1), which in-
+creases the complexity of the Q-function for each member while also remaining a high dissimilarity
+with other members as shown in Figure 3.2g and Figure 3.2h. In Section 5.1, experiment results
+will show that this additional diversity introduced by Diverse initialization can boost the learning
+process and improve the effective exploration of RL problems.
+21(a) Random prior output for action 0(b) Random prior output for action 1
+(c) Diverse prior output for action 0 (ϵ =
+0.1, α1 = 0, α2 = 0)(d) Diverse prior output for action 0 (ϵ =
+0.1, α1 = 0, α2 = 0)
+(e) Diverse prior output for action 0 (ϵ =
+0.1, α1 = 0, α2 = 0.1)(f) Diverse prior output for action 0 (ϵ =
+0.1, α1 = 0, α2 = 0.1)
+(g) Diverse prior output for action 0 (ϵ =
+0.1, α1 = 1, α2 = 0.1)(h) Diverse prior output for action 0 (ϵ =
+0.1, α1 = 1, α2 = 0.1)
+Figure 3.2: Random prior outputs v.s. diversity prior outputs
+223.4
+Double Uncertainty DQN (DU)
+It is called “Double Uncertainty” since it considers uncertainty on both the Q-value and the forward
+dynamic. DU is built on the BSP by taking the epistemic uncertainty of the dynamic model into
+account. To effectively model this uncertainty, we construct an ensemble network {Tk }K
+k=1 , which
+predicts the next state based on the current state and action. While updating the Q-networks, an
+intrinsic reward related to the uncertainty of the dynamic model would be added to the external
+reward. This intrinsic reward is defined as the uncertainty difference between the next state and
+the current state in (3.9).
+Rin = U(s′ ) − U(s)
+(3.9)
+where U(.) denotes the state uncertainty estimator, which computes the uncertainty of a certain
+state as the expected normalised prediction variance of the next state over the state dimension
+number n and possible actions A,
+U(s) = Ei∼n [βi Ea∼A Vark∼K (Tk (s, a))]
+(3.10)
+where Vark∼K (Tk (s, a)) is the prediction variance of the ensemble model for dynamic given a
+certain state and action, Ea∼A (.) computes the expectation over action space, Ei∼n computes the
+1
+expectation over all the state dimension to make the final output a scalar and βi = (max(si )−min(s
+2
+i ))
+scale the variance of it h dimension by the squared range of this state dimension.
+This intrinsic reward encourages exploration in states and actions with high dynamic uncertainty
+and is more effective than uncertainty-driven exploration methods like Bootstrapped DQN in the
+early stages of RL training. Estimating the uncertainty of the Q-value requires a lot of data due to
+its long-term nature and the difficulty of sparse rewards. In contrast, training dynamic models is
+more data-efficient as each transition can provide direct state-to-state mappings, which is similar
+to supervised learning. However, as the training goes on, using dynamic uncertainty as a reward
+could be harmful since it cannot directly incentive the agent to maximise external cumulative re-
+wards and could even hinder progress through excessive exploration. Therefore, while updating
+the Q-functions, a balance should be kept between the intrinsic reward and external reward. In the
+early stage, the exploration strategy should rely more on dynamic uncertainty (intrinsic reward).
+In the later stage, it should rely more on the uncertainty of Q (external reward). To indicate the
+training stage, transition tuple (st , at , rt , st+1 , mt ) and episodic reward2 Rnep will be stored in the
+2
+ep
+buffer. Here we use the variance of the episodic total rewards σbuf
+f er = Var(Rn ) to indicate the
+training stage, which reshapes the reward to R∗ as (3.11). A brief flowchart of DU is demonstrated
+in Figure 3.3.
+R∗ = Rex +
+Rin
+2
+clip(α1 σbuf f er , α2 , α3 )
+(3.11)
+where α1 is a constant that scale the variance, α2 and α3 is the lower and upper clipping limits.
+2 is each episode’s total reward, which will only be stored in the buffer after the termination of an episode.
+23Figure 3.3: flowchart of Double Uncertainty DQN
+2
+In a sparse reward environment, the variance of the episodic total rewards σbuf
+f er should be zero or
+low value at the beginning of the training as agents may only receive the same feedback reward from
+the environment before reaching the goal. After the rare positive reward is observed, the agent’s
+buffer will contain more diverse data with different episodic rewards and increase the variance of the
+2
+buffer. This increment in σbuf
+f er indicates the training has reached a later stage. In this stage, the
+influence of intrinsic reward should be reduced and agents should rely more on the uncertainty of
+Q-value to explore, which can offer insights into potential cumulative external rewards. Otherwise,
+the agent may deviate from the true target of Reinforcement Learning: maximising cumulative
+rewards.
+24Chapter 4
+Experiment
+4.1Environments
+4.1.1Classic Control Problem
+This set of environments is used to rigorously evaluate algorithms’ generalisation capabilities across
+classic control problems, encompassing both sparse reward and dense reward scenarios. Brief
+descriptions of the environments are listed below and the rendered figures are shown in Figure 4.1.
+For more detailed information, please refer to the OpenAI Gym’s official website1 .
+• Mountain Car
+The Mountain Car MDP is a deterministic environment where a car is randomly positioned
+at the base of a sinusoidal valley, and the only available actions are acceleration in either
+direction. The goal of the MDP is to strategically accelerate the car, aiming to reach the
+target state located atop the right hill. The agent will be penalised a -1 reward for each step
+it takes until it reaches the goal. The agent can observe the position (along the x-axis) and
+velocity. It can choose from three actions for each step: accelerate to left, don’t accelerate
+and accelerate to right.
+• Acrobot
+The system consists of two links connected linearly to form a chain, with one end of the
+chain fixed. The joint between the two links is actuated. The goal is to apply torques on the
+actuated joint to swing the free end of the linear chain above a given height while starting
+from the initial state of hanging downwards. The observation space includes 6 elements:
+cos θ1 , sin θ1 , cos θ2 , sin θ2 , θ̇1 (angular velocity of the joint θ1 ) and θ̇2 (angular velocity of
+the joint θ2 ), where θ1 is the angle of first joint and θ2 is angle of the second joint relative
+to the first link. The action space consists of three elements: apply -1, 0 and 1 torque to the
+actuated joint. The agent will receive a -1 reward for each step it takes until the free end
+reaches the goal height.
+• Cart Pole
+A pole is attached by an unactuated joint to a cart, which moves along a frictionless track.
+The pendulum is initially positioned in an upright position on the cart, and the objective is
+to maintain balance by exerting forces in left or right directions on the cart. For each step
+that the pole is held upright, the agent will receive a reward of 1 unit until the pole angle
+1 https://www.gymlibrary.dev/
+25or cart position reaches the limitation. The observation space consists of cart position, cart
+velocity, pole angle and pole angular velocity. There are only two actions: push the cart to
+the left or right.
+(a) Mountain Car
+(b) Acrobot
+(c) Cart Pole
+Figure 4.1: Rendered figures for classic control environments
+4.1.2
+Chain Environments: BinaryChain
+In RL, a chain-like environment refers to an environment that can be represented as a chain of
+states and actions. In such an environment, an agent moves through a series of states and takes
+specific action to transition from one state to another. This kind of environment can be used to
+highlight the need for deep exploration by placing the only reward at the end of the chain. With
+the increase in the length of the chain, it will be exponentially difficult for an agent with a random
+exploration policy to solve since any mistakes will lead to failure.
+Our chain-like environment called BinaryChain is modified based on [32]’s chain environment
+called DeepSea2 . The difficulty of our environment is indicated by the size of the chain N like
+DeepSea. Before each game, the environment will generate the single ground truth action tra-
+jectory for all the timestep, which is an N -length binary vector (e.g. < 0, 1, 1, 0, 1, . . . >). The
+agent will be placed at state s = 0 at the beginning of the episode. For each time step, the agent
+can choose the action from 0 and 1. If the selected action met the ground truth action at this
+timestep, then the agent can be transited to the next state (s′ = s + 1). Otherwise, the episode
+will be terminated with a reward of 0. The agent will only be rewarded 1 for acting exactly as the
+ground truth trajectory, which can lead the agent to state s = N . For illustration, a BinaryChain
+environment of N = 3 with a ground truth action sequence < 0, 1, 0 > is shown in Figure 4.2.
+Theoretically, algorithms without deep exploration (e.g. random exploration) take Ω(2N ) episodes
+to find the first reward. Therefore, this environment can be straightforward to test the deep
+exploration performance by varying the size N .
+2 https://colab.research.google.com/drive/1hOZeHjSdoel_-UoeLfg1aRC4uV_6gX1g
+26Figure 4.2: BinaryChain example N = 3
+4.2
+Metrics
+For classic control problems, episodic rewards were employed as the metrics to evaluate the perfor-
+mance of classic control environments. The exploration rates (E-rate) were also used to demonstrate
+the ratio of exploitative actions, which can indicate agents’ exploration behaviour and uncertainty
+about the environment. For BinaryChain problems, episode-number-to-solve was used as the met-
+ric.
+4.3
+Experiment Details
+Two primary experiments were conducted, with a specific emphasis on investigating the prior
+effect, Dynamic-uncertainty’s effect on efficient exploration in RL.
+4.3.1
+Prior Effect in Ensemble DQN
+To demonstrate the effect of diverse prior, we have conducted an experiment on 4 RL problems men-
+tioned in Section 4.1 using approaches: Random, DQN, Bootstrapped DQN (BS), Bootstrapped
+DQN with Random Prior (BSP) and Bootstrapped DQN with Diverse Prior (BSDP). The training
+and hyperparameters details are shown in Table 4.1. “Repeat” means the same learning will be
+repeated for a certain number to avoid the influence of occasional results. To be noticed, Bina-
+ryChain consists of 20 environments that vary the size from 1 to 20, and the maximum allowed
+episode number to solve the BinaryChain problem is 5000. Also, to improve the exploration effi-
+ciency in BinaryChain problems, for BS, BSP and BSDP, we sample a random member from the
+ensemble to conduct action for each step instead of each episode like traditional ones.
+27Table 4.1: Experiment details for investigating prior effect
+Algorithm
+BS
+BSP
+BSDP
+ϵ-greedy DQN
+Random
+4.3.2
+EpisodeRepeatEnvLearning RateEnsemble sizeDiversity PriorDecaying ϵ-greedy
+5005Mountain Car0.00015\\
+5005Acrobot0.00015\\
+5005CartPole0.00015\\
+MAX 50005BinaryChain (n = 1 ∼ 20)0.0510\\
+5005Mountain Car0.00015\\
+5005Acrobot0.00015\\
+5005CartPole0.00015\\
+MAX 50005BinaryChain (n = 1 ∼ 20)0.0510\\
+5005Mountain Car0.00015ϵ = 0.1, α1 = 1, α2 = 0.1\
+5005Acrobot0.00015ϵ = 0.1, α1 = 1, α2 = 0.1\
+5005CartPole0.00015ϵ = 0.1, α1 = 1, α2 = 0.1\
+MAX 50005BinaryChain (n = 1 ∼ 20)0.0510ϵ = 0.1, α1 = 1, α2 = 0.1\
+5005Mountain Car0.0001\\β1 = 0.05, β2 = 0.9, λ = 1000
+5005Acrobot0.0001\\β1 = 0.05, β2 = 0.9, λ = 1000
+5005CartPole0.0001\\β1 = 0.05, β2 = 0.9, λ = 1000
+MAX 50005BinaryChain (n = 1 ∼ 20)0.05\\β1 = 0.05, β2 = 0.9, λ = 1000
+MAX 50005BinaryChain (n = 1 ∼ 20)\\\\
+The Effect of Dynamic-uncertainty Based Exploration
+To demonstrate that using the dynamic model’s uncertainty as an intrinsic reward can improve
+the exploration for the RL agent and outperform the agent that uses only Q-uncertainty. We will
+compare the performances of Bootstrapped DQN with random Prior (BSP) and Double Uncertainty
+DQN (DU). The training details are shown in Table 4.2. Same as Section 4.3.1, we sample one
+member from the ensemble to conduct action per episode in classic control problems while sampling
+once per step in BinaryChain problems. Furthermore, To illustrate the impact of intrinsic rewards
+2
+during different training stages, we’ll plot the variance of episodic total rewards σbuf
+f er and the
+intrinsic reward scale factor clip(α1 σ2 1
+buf f er ,α2 ,α3 )
+over episode number in MountainCar.
+Table 4.2: Experiment details for investigating the effect of dynamic uncertainty-based exploration
+Algorithm
+BSP
+DU
+Random
+EpisodeRepeatEnvLearning RateEnsemble sizeα1 , α2 , α3
+5005Mountain Car0.00015\
+5005Acrobot0.00015\
+5005CartPole0.00015\
+MAX 50005BinaryChain (n = 1 ∼ 20)0.0510\
+5005Mountain Car0.00015α1 = 1, α2 = 0.1, α3 = 10
+5005Acrobot0.00015α1 = 1, α2 = 0.1, α3 = 10
+5005CartPole0.00015α1 = 1, α2 = 0.1, α3 = 10
+MAX 50005BinaryChain (n = 1 ∼ 20)0.0510α1 = 1, α2 = 1, α3 = 1
+5005BinaryChain (n = 1 ∼ 20)\\\
+28Chapter 5
+Results and Discussion
+5.1
+Prior Effect in Ensemble DQN
+As the experimental details indicated in Table 4.1, results were shown in Figure 5.1. Figure 5.1a,
+Figure 5.1c and Figure 5.1e showed the reward curves over episode number for BS, BSP and BSDP
+in three classic control environments while Figure 5.1b, Figure 5.1d and Figure 5.1f showed the
+exploration rate1 curves over episode number for the same algorithms and environments. Figure
+5.2 showed the episode-number-to-solve curves in the BinaryChain environment. To be noticed,
+the curves in the figures were the mean value for 5 random seeded results and the shadow areas
+3
+standard deviations. Besides, to demonstrate the main trend of curves and
+were bounded by ± 10
+get rid of the irrelevant noise while training, all the curves for classic control environments were
+smoothed by moving average with a window size of 50.
+5.1.1
+Classic Control Problems
+In three classic control environments, it is observed that the ensemble-based methods (BS, BSP
+and BSDP) generally outperformed the ϵ-greedy DQN. In these three ensemble-based methods,
+BSDP converged fastest and went to a high reward in a relatively smaller number of episodes.
+BSP showed improvement over BS at the beginning of training in Acrobot and MountainCar
+while achieved similar results to BS in CartPole. All these three converged to a similar reward
+level (−100 and −130) after many episodes of training in Acrobot (Figure 5.1a) and MountainCar
+(Figure 5.1c). Although the results in Cartpole (Figure 5.1e) did not demonstrate similar episodic
+rewards at the end of the training, we believe that the three curves will get close to each other
+with the proceeding of training as they share a common underlying mechanism and the impact
+of prior functions will diminish with the incorporation of new information, aligning with Bayesian
+principles.
+1 If the selected action is not same as the pure exploitation action, then it will be considered as a exploration
+action. The exploration rate is defined as the proportion of exploration action in an episode. In the ensemble-based
+method, a pure exploitation action will be the action that has the maximum Q-value of ensemble Q’s mean outputs.
+29(a) Results for prior effect: Acrobot (Reward)(b) Results for prior effect: Acrobot (E-rate)
+(c) Results for prior effect: MountainCar (Re-
+ward)(d) Results for prior effect: MountainCar (E-rate)
+(e) Results for prior effect: CartPole (Reward)(f) Results for prior effect: CartPole (E-rate)
+Figure 5.1: Experiment results for investigating Prior effect
+The exploration rate is closely related to the exploration behaviour of the agent and its perfor-
+mance of episodic cumulative reward. For decaying ϵ-greedy exploration strategy, the exploration
+rate decreases deterministically as the total steps increase. In contrast, all the ensemble-based
+methods that use Thompson Sampling as an exploration strategy showed an adaptive exploration
+rate. For example, in CartPole, BSDP’s exploration rates first decreased to 0.17, then increased
+to 0.3 and finally converged to a low value of 0.15. This exploration behaviour is determined by
+the uncertainty among all the ensemble members. If most members show a high Q-value on the
+same action, then the agent will tend to exploit rather than explore; If members have a large
+30disagreement in the Q-value of a state/action, the agent will tend to explore.
+Among the three ensemble-based methods, BSDP has the highest exploration rate at the beginning
+of the training due to the diversity introduced in the priors, which makes the initial uncertainty
+high. This high uncertainty at the beginning of the training has improved the sample efficiency
+as the reward curves demonstrated. It is because incorporating diversity priors has mitigated the
+overconfidence of decision-making in the early stage, which led to more sufficient exploration. Con-
+sidering MountainCar as an example: Before reaching the goal, agents only accumulate experiences
+with zero rewards. This causes all the Q-values in the ensemble to be updated towards zero, leading
+to a rapid decrease in uncertainty. However, this reduction in uncertainty is misleading, as agents
+are still uncertain about the true goal or positive rewards in the environment. However, diversity
+initialization can counteract this rapid reduction in uncertainty by enhancing the initial dissimi-
+larity among ensemble members and improving initial exploration. The BSDP’s E-rate curve in
+MountainCar (Figure 5.1d) also supported our explanation, which immediately rejected the quick
+reduction of uncertainty and maintained a high E-rate (0.4) in the first 30 episodes while BSP just
+maintained around 0.3 E-rate. As for BSP, there was no explicit resilience in E-rate after quick
+reduction as BSP and BSDP showed.
+5.1.2
+BinaryChain Problems
+The BinaryChain environment is designed to test the pure exploration capability in the sparse
+reward environment. In Figure 5.2, we can observe that the pure random policy is better than
+the ϵ-greedy exploration strategy in this problem, which has solved BinaryChain-11 while ϵ-greedy
+has only solved BinayChain-8. This is because the exploration behaviour in ϵ-greedy is the same
+as the random policy but it has a lower rate for exploration than pure random policy. Also, the
+updating of the Q-value using the Bellman equation cannot provide any exploration guidance in
+DQN. This indicates that in a sparse reward environment, before finding the first positive reward,
+a higher E-rate of random exploration will be better than a lower E-rate of random exploration.
+However, benefiting from the uncertainty, the ensemble-based method is better than pure ran-
+dom policy. Among all the ensemble-based methods, BS and BSP’s required episode number for
+solving BinaryChain is close while BSDP outperforms both of these two significantly due to the
+initial diversity advantage. As Figure 5.2 indicated, BSDP has solved BinaryChain-17 within 5000
+episodes. This also indicated that BSDP can solve more complex sparse reward exploration tasks
+than BS and BSP.
+31Figure 5.2: Results for prior effect: BinaryChain (episode number to solve)
+5.2
+The Effect of Dynamic-uncertainty Based Exploration
+As the experimental details indicated in Table 4.1, results were shown in Figure 5.3. Figure 5.3a,
+Figure 5.3c and Figure 5.3e showed the reward curves over episode number for BSP and DU in
+three classic control environments while Figure 5.3b, Figure 5.3d and Figure 5.3f showed the ex-
+ploration rate curves over episode number for the same algorithms and environments. Figure 5.4
+demonstrated how the scale factor of intrinsic reward varied in different training stages. Figure 5.5
+showed the episode-to-solve curves in the BinaryChain environment. To be noticed, the curves in
+the figures were the mean value for 5 random seeded results and the shadow areas were bounded
+3
+standard deviations. Besides, to demonstrate the main trend of curves and get rid of the
+by ± 10
+irrelevant noise while training, all the curves for classic control environments were smoothed by
+moving average with a window size of 50.
+5.2.1
+Classic Control Problems
+In three classic control environments, it is observed that the DU generally outperformed BSP. DU
+showed improvement over BSP at the beginning of training, which could more quickly find the
+main target of RL problem. Both algorithms converged to a similar reward level (−100 and −130)
+after many episodes of training in Acrobot (Figure 5.3a) and MountainCar (Figure 5.3c). Although
+the results in Cartpole (Figure 5.3e) did not demonstrate similar episodic rewards at the end of the
+training, we believe that the two curves will get close to each other if the training continues since the
+intrinsic reward according to dynamic uncertainty will gradually decays. Another finding is that
+32the intrinsic reward might sometimes harm the training in the later stage. For example, there is a
+downswing from −200 to −250 in DU’s reward around episode 200 in MountainCar (Figure 5.3c).
+This is because intrinsic reward may mislead the agent to the uncertain state/action, which could
+deviate from the true and only goal of RL: maximise the cumulative external rewards. However,
+this can be mitigated by tuning the hyperparameters α1 , α2 , α3 in DU to reduce the effect of
+dynamic uncertainty as the training proceeds.
+(a) Results for Dynamic-uncertainty effect: Ac-
+robot (Reward)(b) Results for Dynamic-uncertainty effect: Ac-
+robot (E-rate)
+(c) Results for Dynamic-uncertainty
+MountainCar (Reward)(d) Results for Dynamic-uncertainty
+MountainCar (E-rate)
+effect:
+(e) Results for Dynamic-uncertainty effect: Cart-
+Pole (Reward)
+effect:
+(f) Results for Dynamic-uncertainty effect: Cart-
+Pole (E-rate)
+Figure 5.3: Experiment results for investigating Dynamic-uncertainty’s effect
+33Considering the E-rate curves, an interesting finding is that the DU’s E-rate was lower than BSP
+at the beginning of the training, but showed better converge performance. This phenomenon indi-
+cated that the exploration efficiency of DU is higher than BSP though it did not conduct as many
+exploration actions as BSP. This is different to the results of the prior effect (Section 5.1), where
+BSDP benefited from the high E-rate at the beginning of the training and has better performance.
+Therefore, the only explanation is that DU’s exploration choices have higher quality than BSP’s,
+which can use less E-rate to generate better exploration performance.
+The reason DU, which employed intrinsic motivation, could lead to better exploration quality
+compared to uncertainty-driven exploration (BSP) is that uncertainty estimation of the Q-value
+may lack accuracy due to limited data related to positive rewards in the early stage training. This
+phenomenon will be emphasised in sparse reward environments where the early training stage can
+last longer as the positive reward is difficult to find. For example, in the sparse reward environ-
+ment MountainCar, DU shows more obvious improvement over BSP in the initial exploration of
+positive reward, which reached −250 rewards in 10 episodes while BSP has taken 60 episodes to
+reach. However, in the dense reward environment: CartPole, both DU and BSP started to increase
+around 220 episodes though DU has a faster converging speed after episode 220.
+5.2.2
+Balance of Intrinsic Reward and Uncertainty on Q-values
+2
+As shown in Figure 5.4a, the mean curves of σbuf
+f er quickly became large (65000) in the first 30
+episodes, then dropped to 45000 around episode 100 and finally kept a slowly decreasing trend.
+The final slowly decreasing trend was related to the convergence of the learning in Figure 5.3c,
+where DU’s episodic rewards became stable and less variant after 230 episodes. The scale factor
+1
+2
+of intrinsic reward is an expression of σbuf
+f er , which is clip(α1 σ 2
+. It is clipped between 0
+buf f er ,α2 ,α3 )
+2
+and 1, therefore, the extremely large or small values of σbuf
+f er will not have a big influence on the
+scale. From Figure 5.4b, we can observe that the scale factor for intrinsic reward kept decreasing
+before episode 100 and then became constant zero in the later episodes. Therefore, episode 100
+marked the start of the later stage of the training where uncertainty on Q-value should take more
+responsibility on guiding the decision making, which satisfied our expectation.
+34(a) Results for Dynamic-uncertainty effect: MountainCar (Variance of Episodic Total
+2
+Rewards σbuf
+f er )
+(b) Results for Dynamic-uncertainty effect: MountainCar (Intrinsic Reward Scale Fac-
+tor clip(α σ2 1 ,α ,α ) )
+1 buf f er
+2
+3
+Figure 5.4: DU’s balance between intrinsic reward and uncertainty on Q-values
+5.2.3
+BinaryChain Problems
+The BinaryChain can test algorithms’ pure exploration capability in the sparse reward environ-
+ment. In Figure 5.5, we can observe that both BSP and DU were better than the pure random
+35exploration strategy in this problem. DU has solved the BinaryChain-16, which was the largest
+solved size among these three approaches. This proved again that intrinsic motivation according
+to dynamic reward can lead the agent to better exploration in sparse reward environments.
+Figure 5.5: Results for Dynamic-uncertainty effect: BinaryChain (episode number to solve)
+36Chapter 6
+Conclusion
+Our research has significant implications for uncertainty-based exploration in RL, especially for
+those using the ensemble method to estimate uncertainty. This research has advanced our un-
+derstanding of the strengths and limitations of ensemble-based uncertainty estimation in RL. The
+insights and ideas presented in this report can serve as a foundation for further research.
+6.1
+Summary of Findings
+In this report, we have proposed two methods: BSDP (Bootstrapped DQN with Diverse Prior) and
+DU (Double Uncertainty DQN), which have solved two challenges: lack of prior and uncertainty
+estimation bias in the sparse reward environment respectively. BSDP increased the initial diver-
+sity between ensemble members, which mitigated the underestimation of uncertainty in the early
+stage of training. This change has led the BSDP to better sample efficiency and higher rewards
+in early episodes than no prior (BS) and random prior (BSP) in Classic control and BinaryChain
+Problems. DU incorporated BSP with uncertainty on dynamic, which can provide better guid-
+ance on exploration at the beginning stage, especially in the sparse reward environment. In later
+stages, DU used Q-value uncertainty for the stability of learning, reducing the impact of dynamic
+uncertainty. Furthermore, DU improved exploration quality over BSP with a lower exploration
+rate, while achieving better convergence in classic control and BinaryChain problems.
+6.2
+Limitation and Future Work
+Despite the contributions we have made, there are still many limitations of this thesis that can be
+investigated by future works:
+• All the proposed algorithm is based on the DQN, which cannot represent the whole picture
+of Reinforcement learning. We will try to incorporate the ensemble-based uncertainty esti-
+mation into other RL baselines such as policy-based algorithms and Actor-Critic algorithms.
+• The tuning and influence of hyperparameters in BSDP indicated by (3.3) and DU indicated
+by (3.11) has not been studied. These hyperparameters may substantially change the be-
+haviour and performance in RL. We will investigate the effect of hyperparameters by ablation
+experiments.
+• In this thesis, we have only employed ensemble uncertainty estimation. Therefore, it is
+difficult to understand the strengths or drawbacks of it. In the future, we will try new
+37types of uncertainty estimation methods such as the single deterministic methods, BNNs
+and test-time augmentation methods.
+• In this thesis, we primarily focus on model-free reinforcement learning, while Dynamic Un-
+certainty is closely associated with model-based reinforcement learning. In the future, we
+will investigate how dynamic uncertainty can enhance model-based reinforcement learning.
+38Bibliography
+[1] Aggarwal, C.C., Kong, X., Gu, Q., Han, J., Philip, S.Y.: Active learning: A survey. In: Data
+classification, pp. 599–634. Chapman and Hall/CRC (2014)
+[2] Badia, A.P., Piot, B., Kapturowski, S., Sprechmann, P., Vitvitskyi, A., Guo, Z.D., Blun-
+dell, C.: Agent57: Outperforming the Atari human benchmark. In: III, H.D., Singh, A.
+(eds.) Proceedings of the 37th International Conference on Machine Learning. Proceedings
+of Machine Learning Research, vol. 119, pp. 507–517. PMLR (13–18 Jul 2020), https:
+//proceedings.mlr.press/v119/badia20a.html
+[3] Bellemare, M., Srinivasan, S., Ostrovski, G., Schaul, T., Saxton, D., Munos, R.: Unifying
+count-based exploration and intrinsic motivation. Advances in neural information processing
+systems 29 (2016)
+[4] Bellemare, M.G., Dabney, W., Munos, R.: A distributional perspective on reinforcement
+learning. In: International conference on machine learning. pp. 449–458. PMLR (2017)
+[5] Bellemare, M.G., Naddaf, Y., Veness, J., Bowling, M.: The arcade learning environment: An
+evaluation platform for general agents. Journal of Artificial Intelligence Research 47, 253–279
+(2013)
+[6] Bellman, R.: Dynamic programming. Science 153(3731), 34–37 (1966)
+[7] Burda, Y., Edwards, H., Pathak, D., Storkey, A., Darrell, T., Efros, A.A.: Large-scale study
+of curiosity-driven learning. arXiv preprint arXiv:1808.04355 (2018)
+[8] Chentanez, N., Barto, A., Singh, S.: Intrinsically motivated reinforcement learning. Advances
+in neural information processing systems 17 (2004)
+[9] Choi, Y., Lee, K., Oh, S.: Distributional deep reinforcement learning with a mixture of
+gaussians. In: 2019 International Conference on Robotics and Automation (ICRA). pp. 9791–
+9797. IEEE (2019)
+[10] Cox, D.R., Hinkley, D.V.: Theoretical statistics. CRC Press (1979)
+[11] Dabney, W., Rowland, M., Bellemare, M., Munos, R.: Distributional reinforcement learning
+with quantile regression. In: Proceedings of the AAAI Conference on Artificial Intelligence.
+vol. 32 (2018)
+[12] Dietterich, T.G.: Ensemble methods in machine learning. In: International workshop on
+multiple classifier systems. pp. 1–15. Springer (2000)
+[13] Efron, B.: The jackknife, the bootstrap and other resampling plans. SIAM (1982)
+39[14] Gal, Y., Ghahramani, Z.: Dropout as a bayesian approximation: Representing model un-
+certainty in deep learning. In: international conference on machine learning. pp. 1050–1059.
+PMLR (2016)
+[15] Gawlikowski, J., Tassi, C.R.N., Ali, M., Lee, J., Humt, M., Feng, J., Kruspe, A., Triebel,
+R., Jung, P., Roscher, R., et al.: A survey of uncertainty in deep neural networks. Artificial
+Intelligence Review pp. 1–77 (2023)
+[16] Haarnoja, T., Zhou, A., Abbeel, P., Levine, S.: Soft actor-critic: Off-policy maximum entropy
+deep reinforcement learning with a stochastic actor. In: International conference on machine
+learning. pp. 1861–1870. PMLR (2018)
+[17] Hao, J., Yang, T., Tang, H., Bai, C., Liu, J., Meng, Z., Liu, P., Wang, Z.: Exploration in
+deep reinforcement learning: From single-agent to multiagent domain. IEEE Transactions on
+Neural Networks and Learning Systems (2023)
+[18] He, B., Lakshminarayanan, B., Teh, Y.W.: Bayesian deep ensembles via the neural tangent
+kernel. Advances in neural information processing systems 33, 1010–1022 (2020)
+[19] He, K., Zhang, X., Ren, S., Sun, J.: Delving deep into rectifiers: Surpassing human-level
+performance on imagenet classification. In: Proceedings of the IEEE international conference
+on computer vision. pp. 1026–1034 (2015)
+[20] Herron, E.J., Young, S.R., Potok, T.E.: Ensembles of networks produced from neural archi-
+tecture search. In: International Conference on High Performance Computing. pp. 223–234.
+Springer (2020)
+[21] Houthooft, R., Chen, X., Duan, Y., Schulman, J., De Turck, F., Abbeel, P.: Vime: Variational
+information maximizing exploration. Advances in neural information processing systems 29
+(2016)
+[22] Howard, R.A.: Dynamic programming and markov processes. (1960)
+[23] Jospin, L.V., Laga, H., Boussaid, F., Buntine, W., Bennamoun, M.: Hands-on bayesian neu-
+ral networks—a tutorial for deep learning users. IEEE Computational Intelligence Magazine
+17(2), 29–48 (2022)
+[24] Lakshminarayanan, B., Pritzel, A., Blundell, C.: Simple and scalable predictive uncertainty
+estimation using deep ensembles. Advances in neural information processing systems 30 (2017)
+[25] Lillicrap, T.P., Hunt, J.J., Pritzel, A., Heess, N., Erez, T., Tassa, Y., Silver, D., Wierstra, D.:
+Continuous control with deep reinforcement learning. arXiv preprint arXiv:1509.02971 (2015)
+[26] Livieris, I.E., Iliadis, L., Pintelas, P.: On ensemble techniques of weight-constrained neural
+networks. Evolving Systems 12, 155–167 (2021)
+[27] Malinin, A., Gales, M.: Predictive uncertainty estimation via prior networks. Advances in
+neural information processing systems 31 (2018)
+[28] Mnih, V., Badia, A.P., Mirza, M., Graves, A., Lillicrap, T., Harley, T., Silver, D.,
+Kavukcuoglu, K.: Asynchronous methods for deep reinforcement learning. In: Balcan, M.F.,
+Weinberger, K.Q. (eds.) Proceedings of The 33rd International Conference on Machine Learn-
+ing. Proceedings of Machine Learning Research, vol. 48, pp. 1928–1937. PMLR, New York,
+New York, USA (20–22 Jun 2016), https://proceedings.mlr.press/v48/mniha16.html
+40[29] Mnih, V., Kavukcuoglu, K., Silver, D., Rusu, A.A., Veness, J., Bellemare, M.G., Graves,
+A., Riedmiller, M., Fidjeland, A.K., Ostrovski, G., et al.: Human-level control through deep
+reinforcement learning. nature 518(7540), 529–533 (2015)
+[30] Nalepa, J., Myller, M., Kawulok, M.: Training-and test-time data augmentation for hyper-
+spectral image segmentation. IEEE Geoscience and Remote Sensing Letters 17(2), 292–296
+(2019)
+[31] Neal, R.M.: Bayesian learning for neural networks, vol. 118. Springer Science & Business
+Media (2012)
+[32] Osband, I., Aslanides, J., Cassirer, A.: Randomized prior functions for deep reinforcement
+learning. Advances in Neural Information Processing Systems 31 (2018)
+[33] Osband, I., Blundell, C., Pritzel, A., Van Roy, B.: Deep exploration via bootstrapped dqn.
+Advances in neural information processing systems 29 (2016)
+[34] Osband, I., Cassirer, A., Aslanides, J.: Randomized prior functions for deep reinforcement
+learning (2018), https://sites.google.com/view/randomized-prior-nips-2018/
+[35] Oudeyer, P.Y., Kaplan, F.: How can we define intrinsic motivation? In: the 8th International
+Conference on Epigenetic Robotics: Modeling Cognitive Development in Robotic Systems.
+Lund University Cognitive Studies, Lund: LUCS, Brighton (2008)
+[36] Peer, O., Tessler, C., Merlis, N., Meir, R.: Ensemble bootstrapping for q-learning. In: Inter-
+national Conference on Machine Learning. pp. 8454–8463. PMLR (2021)
+[37] Renda, A., Barsacchi, M., Bechini, A., Marcelloni, F.: Comparing ensemble strategies for deep
+learning: An application to facial expression recognition. Expert Systems with Applications
+136, 1–11 (2019)
+[38] Ryan, R.M., Deci, E.L.: Intrinsic and extrinsic motivations: Classic definitions and new
+directions. Contemporary educational psychology 25(1), 54–67 (2000)
+[39] Schulman, J., Levine, S., Abbeel, P., Jordan, M., Moritz, P.: Trust region policy optimization.
+In: International conference on machine learning. pp. 1889–1897. PMLR (2015)
+[40] Schulman, J., Wolski, F., Dhariwal, P., Radford, A., Klimov, O.: Proximal policy optimization
+algorithms. arXiv preprint arXiv:1707.06347 (2017)
+[41] Shanmugam, D., Blalock, D., Balakrishnan, G., Guttag, J.: When and why test-time aug-
+mentation works. arXiv preprint arXiv:2011.11156 1(3), 4 (2020)
+[42] Silver, D., Huang, A., Maddison, C.J., Guez, A., Sifre, L., Van Den Driessche, G., Schrit-
+twieser, J., Antonoglou, I., Panneershelvam, V., Lanctot, M., et al.: Mastering the game of
+go with deep neural networks and tree search. nature 529(7587), 484–489 (2016)
+[43] Srivastava, N., Hinton, G., Krizhevsky, A., Sutskever, I., Salakhutdinov, R.: Dropout: a
+simple way to prevent neural networks from overfitting. The journal of machine learning
+research 15(1), 1929–1958 (2014)
+[44] Stadie, B.C., Levine, S., Abbeel, P.: Incentivizing exploration in reinforcement learning with
+deep predictive models. arXiv preprint arXiv:1507.00814 (2015)
+41[45] Still, S., Precup, D.: An information-theoretic approach to curiosity-driven reinforcement
+learning. Theory in Biosciences 131, 139–148 (2012)
+[46] Sutton, R.S., Barto, A.G., et al.: Introduction to reinforcement learning, vol. 135. MIT press
+Cambridge (1998)
+[47] Sutton, R.S.: Temporal credit assignment in reinforcement learning. University of Mas-
+sachusetts Amherst (1984)
+[48] Van Hasselt, H., Guez, A., Silver, D.: Deep reinforcement learning with double q-learning. In:
+Proceedings of the AAAI conference on artificial intelligence. vol. 30 (2016)
+[49] Varshney, K.R., Alemzadeh, H.: On the safety of machine learning: Cyber-physical systems,
+decision sciences, and data products. Big data 5(3), 246–255 (2017)
+[50] Wald, A.: Statistical decision functions. (1950)
+[51] Williams, C.K., Rasmussen, C.E.: Gaussian processes for machine learning, vol. 2. MIT press
+Cambridge, MA (2006)
+[52] Williams, R.J.: Simple statistical gradient-following algorithms for connectionist reinforce-
+ment learning. Machine learning 8, 229–256 (1992)
+[53] Yu, T., Thomas, G., Yu, L., Ermon, S., Zou, J.Y., Levine, S., Finn, C., Ma, T.: Mopo:
+Model-based offline policy optimization. Advances in Neural Information Processing Systems
+33, 14129–14142 (2020)
+42

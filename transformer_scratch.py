@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-with open("wizard_of_oz.txt", "r", encoding="utf-8") as f:
+with open("DT.txt", "r", encoding="utf-8") as f:
     text = f.read()
 chars = sorted(set(text))
 vocab_size = len(chars)
