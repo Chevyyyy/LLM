@@ -1,6 +1,9 @@
 import torch
 from transformer_scratch import *
 
+from datasets import load_dataset
+
+
 model = GPTLanguageModel(vocab_size).to(device)
 try:
     model.load_state_dict(torch.load("model.pt"))
